@@ -1,14 +1,30 @@
 init -990 python in mas_submod_utils:
-    Submod(
+    __nm_deps = {"Better Loading": (None, None)} if not renpy.windows else dict()
+
+    nm_submod = Submod(
         author="multimokia",
         name="Nightmusic",
         description=(
             "This submod allows Monika to play a song for spending time with her in the evenings.\n"
             "Compatible with {a=https://github.com/Booplicate/MAS-Submods-YouTubeMusic/releases/latest}{i}{u}Youtube Music{/u}{/i}{/a}."
         ),
-        version="2.1.4",
-        settings_pane="nightmusic_settings"
+        version="2.1.5",
+        settings_pane="nightmusic_settings",
+        dependencies=__nm_deps,
     )
+
+init -989 python in nm_utils:
+    import store
+
+    #Register the updater if needed
+    if store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin"):
+        store.sup_utils.SubmodUpdater(
+            submod=store.mas_submod_utils.nm_submod,
+            user_name="multimokia",
+            repository_name="MAS-Submod-Nightmusic",
+            tag_formatter=lambda x: x[x.index('_') + 1:],
+            attachment_id=None,
+        )
 
 #The status panel
 screen nightmusic_settings():
@@ -27,65 +43,14 @@ screen nightmusic_settings():
 #Default this var so it works
 default persistent._music_playlist_mode = False
 
-python early:
-    def nm_load(name):
-        if renpy.config.reject_backslash and "\\" in name:
-            raise Exception("Backslash in filename, use '/' instead: %r" % name)
-
-        name = renpy.re.sub(r'/+', '/', name)
-
-        for p in renpy.loader.get_prefixes():
-            rv = renpy.loader.load_core(p + name)
-            if rv is not None:
-                return rv
-
-        raise IOError("Couldn't find file '%s'." % name)
-
-    def nm_transfn(name):
-        """
-        Tries to translate the name to a file that exists in one of the
-        searched directories.
-        """
-
-        if renpy.config.reject_backslash and "\\" in name:
-            raise Exception("Backslash in filename, use '/' instead: %r" % name)
-
-        name = renpy.loader.lower_map.get(name.lower(), name)
-
-        if isinstance(name, str):
-            name = name.decode("utf-8")
-
-        for d in renpy.config.searchpath:
-            fn = os.path.join(renpy.config.basedir, d, name)
-
-            renpy.loader.add_auto(fn)
-
-            if os.path.exists(fn):
-                return fn
-
-        raise Exception("Couldn't find file '%s'." % name)
-
-    def nm_loadable(name):
-        for p in renpy.loader.get_prefixes():
-            if renpy.loader.loadable_core(p + name):
-                return True
-        return False
-
-    renpy.loader.load = nm_load
-    renpy.loader.transfn = nm_transfn
-    renpy.loader.loadable = nm_loadable
-
-#Add the label into the restart blacklist
-init 1 python:
-    evhand.RESTART_BLKLST.append('monika_welcome_home')
-
 #START: Topic/Labels
 init 50 python:
     #Reset ev
     home_ev = mas_getEV('monika_welcome_home')
     home_ev.conditional=(
-        "not mas_isDayNow() "
-        "and not persistent.current_track"
+        "mas_isNightNow() "
+        "and not persistent.current_track "
+        "and not store.nm_utils.isPlayingNightmusic()"
     )
     home_ev.action=EV_ACT_QUEUE
 
@@ -98,18 +63,23 @@ init 5 python:
             persistent.event_database,
             eventlabel="monika_welcome_home",
             conditional=(
-                "not mas_isDayNow() "
-                "and not persistent.current_track"
+                "mas_isNightNow() "
+                "and not persistent.current_track "
+                "and not store.nm_utils.isPlayingNightmusic()"
             ),
             action=EV_ACT_QUEUE,
             rules={"skip alert": None}
-        )
+        ),
+        restartBlacklist=True
     )
-
 
 label monika_welcome_home:
     #Sanity check this since for whatever reason this conditional runs anyway.
-    if not mas_isDayNow() or persistent.current_track:
+    if (
+        mas_isNightNow()
+        and not persistent.current_track
+        and not store.nm_utils.isPlayingNightmusic()
+    ):
         #Firstly, we pick a song (or songs)
         if persistent._music_playlist_mode:
             $ song = nm_utils.getSongs(nm_utils.nightMusicStation, with_filepaths=True)
@@ -134,26 +104,25 @@ label monika_welcome_home:
         show monika 5eubla at t11 zorder MAS_MONIKA_Z with dissolve
         m 5eubla "Let's have a relaxing evening together, [player]."
 
-    else:
-        label .recond:
-        #Reset ev if not night
-        $ home_ev = mas_getEV('monika_welcome_home')
-        $ home_ev.conditional=(
-            "not mas_isDayNow() "
-            "and not persistent.current_track"
-        )
-        $ home_ev.action=EV_ACT_QUEUE
+        python:
+            #Reset ev if not night
+            home_ev = mas_getEV('monika_welcome_home')
+            home_ev.conditional=(
+                "mas_isNightNow() "
+                "and not persistent.current_track "
+                "and not store.nm_utils.isPlayingNightmusic()"
+            )
+            home_ev.action=EV_ACT_QUEUE
 
-        #Fix the shown count
-        $ home_ev.shown_count -= 1
-        #Don't need this anymore, delet
-        $ del home_ev
+            #Fix the shown count
+            home_ev.shown_count -= 1
+            #Don't need this anymore, delet
+            del home_ev
     return
 
 #START: Utils
 init python in nm_utils:
     import mutagen
-    import store
     import random
 
     #We'll initialize our dockingstation here
@@ -350,10 +319,7 @@ init python in nm_utils:
         Changes into and out of playlist mode seamlessly
         """
         #Firstly, we need to make sure we're in nightmusic.
-        if (
-            store.songs.selected_track == store.songs.FP_NIGHTMUSIC
-            or store.songs.selected_track and "nightmusic" in store.songs.selected_track
-        ):
+        if isPlayingNightmusic():
             #Get a list of songs
             song_files = getSongs(nightMusicStation, with_filepaths=True)
             current_song = getPlayingSong(filepath=True)
@@ -377,6 +343,16 @@ init python in nm_utils:
                 else:
                     # Queue the current song
                     renpy.music.queue(current_song, loop=True, clear_queue=True)
+
+    def isPlayingNightmusic():
+
+        if store.songs.current_track is None:
+            return False
+
+        return (
+            store.songs.current_track == store.songs.FP_NIGHTMUSIC
+            or store.songs.current_track and "nightmusic" in store.songs.current_track
+        )
 
 #START: zz_music_selector.rpy overrides
 init python in songs:
@@ -550,6 +526,11 @@ init 1 python:
             selected_track = renpy.call_in_new_context("display_music_menu_ov")
             if selected_track == songs.NO_SONG:
                 selected_track = songs.FP_NO_SONG
+                if (
+                    store.nm_utils.isPlayingNightmusic()
+                    and mas_isNightNow()
+                ):
+                    mas_stripEVL('monika_welcome_home', list_pop=True)
 
             # workaround to handle new context
             if selected_track == songs.FP_NIGHTMUSIC:
@@ -567,6 +548,9 @@ init 1 python:
                     else:
                         song = random.choice(song_files)
                         play_song(song, is_nightmusic=True)
+
+                if mas_isNightNow():
+                    mas_stripEVL('monika_welcome_home', list_pop=True)
 
             elif selected_track != songs.current_track:
                 play_song(selected_track, set_per=True)
@@ -655,10 +639,7 @@ screen music_menu_ov(music_page, page_num=0, more_pages=False):
 
 
     #Logic to fix looping upon exiting the music menu
-    if (
-        store.songs.current_track == store.songs.FP_NIGHTMUSIC
-        or store.songs.current_track and "nightmusic" in store.songs.current_track
-    ):
+    if store.nm_utils.isPlayingNightmusic():
         if not persistent._music_playlist_mode:
             $ return_key = nm_utils.getPlayingSong(filepath=True)
         else:
@@ -731,10 +712,7 @@ screen music_menu_ov(music_page, page_num=0, more_pages=False):
 
         textbutton _("Return"):
             style "music_menu_return_button"
-            if (
-                store.songs.current_track == store.songs.FP_NIGHTMUSIC
-                or store.songs.current_track and "nightmusic" in store.songs.current_track
-            ):
+            if store.nm_utils.isPlayingNightmusic():
                 if not persistent._music_playlist_mode:
                     action Return(nm_utils.getPlayingSong(filepath=True))
                 else:
