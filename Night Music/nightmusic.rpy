@@ -46,16 +46,23 @@ default persistent._music_playlist_mode = False
 #START: Topic/Labels
 init 50 python:
     #Reset ev
-    home_ev = mas_getEV('monika_welcome_home')
-    home_ev.conditional=(
-        "mas_isNightNow() "
-        "and not persistent.current_track "
-        "and not store.nm_utils.isPlayingNightmusic()"
-    )
-    home_ev.action=EV_ACT_QUEUE
+    def nm_recond(decrement_shown_count=False):
+        """
+        Readds the conditional and action to the nightmusic event
+        """
+        home_ev = mas_getEV('monika_welcome_home')
+        home_ev.conditional=(
+            "mas_isNightNow() "
+            "and not persistent.current_track "
+            "and not store.nm_utils.isPlayingNightmusic()"
+        )
+        home_ev.action=EV_ACT_QUEUE
 
-    #Don't need this anymore, delet
-    del home_ev
+        if decrement_shown_count:
+            home_ev.shown_count -= 1
+
+    nm_recond()
+
 
 init 5 python:
     addEvent(
@@ -89,7 +96,7 @@ label monika_welcome_home:
 
         #We have nothing? Just return
         if not song:
-            jump .recond
+            $ nm_recond(True)
 
         #Set up the notif
         $ display_notif(m_name, ["Hey [player]..."], "Topic Alerts")
@@ -104,20 +111,8 @@ label monika_welcome_home:
         show monika 5eubla at t11 zorder MAS_MONIKA_Z with dissolve
         m 5eubla "Let's have a relaxing evening together, [player]."
 
-        python:
-            #Reset ev if not night
-            home_ev = mas_getEV('monika_welcome_home')
-            home_ev.conditional=(
-                "mas_isNightNow() "
-                "and not persistent.current_track "
-                "and not store.nm_utils.isPlayingNightmusic()"
-            )
-            home_ev.action=EV_ACT_QUEUE
-
-            #Fix the shown count
-            home_ev.shown_count -= 1
-            #Don't need this anymore, delet
-            del home_ev
+    else:
+        $ nm_recond(True)
     return
 
 #START: Utils
