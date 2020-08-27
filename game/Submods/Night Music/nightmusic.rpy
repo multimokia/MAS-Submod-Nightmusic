@@ -1,4 +1,5 @@
 init -990 python in mas_submod_utils:
+    #Linux and Mac both require this dependency in order to be able to play nightmusic correctly
     __nm_deps = {"Better Loading": (None, None)} if not renpy.windows else dict()
 
     nm_submod = Submod(
@@ -23,6 +24,7 @@ init -989 python in nm_utils:
             user_name="multimokia",
             repository_name="MAS-Submod-Nightmusic",
             tag_formatter=lambda x: x[x.index('_') + 1:],
+            update_dir="",
             attachment_id=None,
         )
 
