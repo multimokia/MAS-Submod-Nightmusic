@@ -7,3 +7,8 @@ NOTE: Music menu has a new button, and the `prev`/`next` page options are on the
 It is possible to set songs to have a conditional. Simply put the condition (as python code) into the `genre` field of the song.
 
 Example, if you wanted one song to only be picked during the d25 season, add `store.mas_isD25Season()` in. (Exceptions are logged)
+
+This submod is compatible with the [Submod Updater Plugin](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin/releases/latest)! Give it an install to make updating this submod easier.
+
+### Please report any and all problems in the `issues` tab.
+###### Thank you
