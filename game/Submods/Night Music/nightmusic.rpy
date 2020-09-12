@@ -55,6 +55,7 @@ init 50 python:
         home_ev = mas_getEV('monika_welcome_home')
         home_ev.conditional=(
             "mas_isNightNow() "
+            "and len(nm_utils.getSongs(nm_utils.nightMusicStation)) > 0 "
             "and not persistent.current_track "
             "and not store.nm_utils.isPlayingNightmusic()"
         )
@@ -74,6 +75,7 @@ init 5 python:
             conditional=(
                 "mas_isNightNow() "
                 "and not persistent.current_track "
+                "and len(nm_utils.getSongs(nm_utils.nightMusicStation)) > 0 "
                 "and not store.nm_utils.isPlayingNightmusic()"
             ),
             action=EV_ACT_QUEUE,
