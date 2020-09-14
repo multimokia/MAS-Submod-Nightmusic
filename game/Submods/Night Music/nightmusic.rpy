@@ -102,11 +102,13 @@ label monika_welcome_home:
         if not song:
             $ nm_recond(True)
 
+        $ chosen_nickname = mas_get_player_nickname()
+
         #Set up the notif
-        $ display_notif(m_name, ["Hey [player]..."], "Topic Alerts")
+        $ display_notif(m_name, ["Hey [chosen_nickname]..."], "Topic Alerts")
 
 
-        m 1eka "Hey [player]..."
+        m 1eka "Hey [chosen_nickname]..."
         m 3eka "Now that we're home together, I'm going to put on a song for us to relax to.{w=0.5}.{w=0.5}.{nw}"
 
         $ play_song(song, fadein=3.0, is_nightmusic=True)
