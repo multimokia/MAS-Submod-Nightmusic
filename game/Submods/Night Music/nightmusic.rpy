@@ -105,7 +105,7 @@ label monika_welcome_home:
         $ chosen_nickname = mas_get_player_nickname()
 
         #Set up the notif
-        $ display_notif(m_name, ["Hey [chosen_nickname]..."], "Topic Alerts")
+        $ mas_display_notif(m_name, ["Hey [chosen_nickname]..."], "Topic Alerts")
 
 
         m 1eka "Hey [chosen_nickname]..."
