@@ -1,7 +1,4 @@
 init -990 python in mas_submod_utils:
-    #Linux and Mac both require this dependency in order to be able to play nightmusic correctly
-    __nm_deps = {"Better Loading": (None, None)} if not renpy.windows else dict()
-
     nm_submod = Submod(
         author="multimokia",
         name="Nightmusic",
@@ -9,9 +6,8 @@ init -990 python in mas_submod_utils:
             "This submod allows Monika to play a song for spending time with her in the evenings.\n"
             "Compatible with {a=https://github.com/Booplicate/MAS-Submods-YouTubeMusic/releases/latest}{i}{u}Youtube Music{/u}{/i}{/a}."
         ),
-        version="2.1.5",
+        version="2.2.0",
         settings_pane="nightmusic_settings",
-        dependencies=__nm_deps,
     )
 
 init -989 python in nm_utils:
@@ -55,7 +51,7 @@ init 50 python:
         home_ev = mas_getEV('monika_welcome_home')
         home_ev.conditional=(
             "mas_isNightNow() "
-            "and len(nm_utils.getSongs(nm_utils.nightMusicStation)) > 0 "
+            "and len(nm_utils.getSongs()) > 0 "
             "and not persistent.current_track "
             "and not store.nm_utils.isPlayingNightmusic()"
         )
@@ -75,7 +71,7 @@ init 5 python:
             conditional=(
                 "mas_isNightNow() "
                 "and not persistent.current_track "
-                "and len(nm_utils.getSongs(nm_utils.nightMusicStation)) > 0 "
+                "and len(nm_utils.getSongs()) > 0 "
                 "and not store.nm_utils.isPlayingNightmusic()"
             ),
             action=EV_ACT_QUEUE,
@@ -93,22 +89,20 @@ label monika_welcome_home:
     ):
         #Firstly, we pick a song (or songs)
         if persistent._music_playlist_mode:
-            $ song = nm_utils.getSongs(nm_utils.nightMusicStation, with_filepaths=True)
+            $ song = nm_utils.getSongs(with_filepaths=True)
             $ renpy.random.shuffle(song)
         else:
-            $ song = nm_utils.pickSong(nm_utils.nightMusicStation)
+            $ song = nm_utils.pickSong()
 
         #We have nothing? Just return
         if not song:
             $ nm_recond(True)
 
-        $ chosen_nickname = mas_get_player_nickname()
-
         #Set up the notif
-        $ mas_display_notif(m_name, ["Hey [chosen_nickname]..."], "Topic Alerts")
+        $ mas_display_notif(m_name, ["Hey [player]..."], "Topic Alerts")
 
 
-        m 1eka "Hey [chosen_nickname]..."
+        m 1eka "Hey [player]..."
         m 3eka "Now that we're home together, I'm going to put on a song for us to relax to.{w=0.5}.{w=0.5}.{nw}"
 
         $ play_song(song, fadein=3.0, is_nightmusic=True)
@@ -125,35 +119,37 @@ label monika_welcome_home:
 init python in nm_utils:
     import mutagen
     import random
+    import os
 
-    #We'll initialize our dockingstation here
-    nightMusicStation = store.MASDockingStation(renpy.config.basedir + "/nightmusic/")
+    NM_PATH = "./nightmusic/"
+    NM_PLAY_PATH = "../nightmusic/"
 
-    def getFilesByType(station, ext):
+    def getFilesByType(ext, with_path=False):
         """
-        Similar to MASDockingStation.getPackageList(), but retrieves a full filepath
+        Similar to MASDockingStation.getPackageList(), but optionally returns the local filepath
 
         IN:
-            station - MASDockingStation with its station pointed where we wish to look for files
             ext - extension to look for
+            with_path - whether to include the path prefix in the list
+                (Default: False)
 
         OUT:
             list() - list of files with the extension provided
         """
-        import os
+        fp_prefix = NM_PLAY_PATH if with_path else ""
         return [
-            (station.station + "/" + package).replace("\\","/")
-            for package in os.listdir(station.station)
+            f"{fp_prefix}{package}"
+            for package in os.listdir(NM_PATH)
             if package.endswith(ext)
         ]
 
-    def checkSongConditional(station, songname):
+    def checkSongConditional(songname):
         """
         Checks song conditionals by reading their 'Genre' field
 
         IN:
-            station - MASDockingStation object
             songname - the song which conditional we wish to check
+                NOTE: This MUST include the path to the song
 
         OUT:
             If the song has a conditional in the Genre field, it is evaluated and the result is returned
@@ -161,7 +157,8 @@ init python in nm_utils:
 
         NOTE: This assumes that songname is an mp3 file
         """
-        meta_dict = mutagen.mp3.EasyMP3(station.station + songname).get("genre", None)
+        path_prefix = NM_PATH if not songname.startswith(NM_PATH) else ""
+        meta_dict = mutagen.mp3.EasyMP3(path_prefix + songname).get("genre", None)
 
         if meta_dict:
             conditional = meta_dict[0]
@@ -171,56 +168,51 @@ init python in nm_utils:
         try:
             return eval(conditional)
         except Exception as e:
-            store.mas_utils.writelog("[ERROR]: NIGHTMUSIC - Conditional failed to evaluate: {0}\n".format(e))
+            store.mas_submod_utils.writeLog("[ERROR]: NIGHTMUSIC - Conditional failed to evaluate: {0}\n".format(e))
             return False
 
-    def getSongs(station, with_filepaths=False):
+    def getSongs(with_filepaths=False):
         """
-        Gets the songs found in the station's directory
+        Gets the songs found in the nightmusic directory
 
         IN:
-            station - MASDockingStation object pointed to the directory to find songs in
             with_filepaths - boolean, True if we want to return a list with full paths or not.
-            (Default: False)
+                (Default: False)
         """
 
         #We need to handle oggs a little differently
-        if with_filepaths:
-            ogg_files = getFilesByType(station, ".ogg")
-        else:
-            ogg_files = station.getPackageList(".ogg")
-
-        mp3_files = station.getPackageList(".mp3")
+        ogg_files = getFilesByType(".ogg", with_filepaths)
+        mp3_files = getFilesByType(".mp3", with_filepaths)
 
         #Now we filter the mp3 files down by their conditionals
         mp3_files = [
-            ((station.station + mp3).replace("\\","/") if with_filepaths else mp3)
+            mp3
             for mp3 in mp3_files
-            if checkSongConditional(station, mp3)
+            if checkSongConditional(mp3)
         ]
 
         #And return the combi list
         return mp3_files + ogg_files
 
-    def pickSong(station):
+    def pickSong(path: str="./"):
         """
         Picks a song to play
 
         IN:
-            station - MASDockingStation object pointed to the directory we're looking for songs in
+            path - string path pointed to the directory we're looking for songs in
 
         OUT:
             string - filepath to the song ready for use with renpy.play
         """
         #First, generate the list of songs
-        song_list = getSongs(station)
+        song_list = getSongs(path)
 
         #Now, if we have no songs, we return None
         if not song_list:
             return None
 
         #Otherwise, return a random choice from the songs
-        return (station.station + random.choice(song_list)).replace("\\","/")
+        return f"./{random.choice(song_list)}"
 
     def getPlayingSong(filepath=False):
         """
@@ -322,7 +314,7 @@ init python in nm_utils:
         #Firstly, we need to make sure we're in nightmusic.
         if isPlayingNightmusic():
             #Get a list of songs
-            song_files = getSongs(nightMusicStation, with_filepaths=True)
+            song_files = getSongs(True)
             current_song = getPlayingSong(filepath=True)
 
             #Ensure list actually has things in it
@@ -536,7 +528,7 @@ init 1 python:
             # workaround to handle new context
             if selected_track == songs.FP_NIGHTMUSIC:
                 #Set up the file list
-                song_files = nm_utils.getSongs(nm_utils.nightMusicStation, with_filepaths=True)
+                song_files = nm_utils.getSongs(with_filepaths=True)
 
                 #Ensure list actually has things in it
                 if len(song_files) > 0:
@@ -590,7 +582,7 @@ init 1 python:
 
         elif song is store.songs.FP_NIGHTMUSIC:
             #Run a nightmusic alg for this
-            song = store.nm_utils.pickSong(nm_utils.nightMusicStation)
+            song = store.nm_utils.pickSong()
             is_nightmusic = True
 
         #Now play a song
